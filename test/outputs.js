@@ -14,6 +14,11 @@ var files = [
     __dirname + '/deps/y.js'
 ];
 
+var brokenFiles = [
+    __dirname + '/deps/x.js',
+    __dirname + '/deps/y_broken.js'
+];
+
 test('file outputs', function (t) {
     var tmpdir = tmp() + '/factor-bundle-' + Math.random();
     mkdirp.sync(tmpdir);
@@ -72,6 +77,42 @@ test('stream outputs', function (t) {
         } } });
     }
 });
+
+test('closing streams on build success', function (t) {
+    closingStreamsTest(t, files);
+});
+
+test('closing streams on build failure', function (t) {
+    closingStreamsTest(t, brokenFiles);
+});
+
+function closingStreamsTest(t, inputFiles) {
+    var tmpdir = tmp() + '/factor-bundle-' + Math.random();
+    mkdirp.sync(tmpdir);
+    t.plan(1);
+    var pending = 3, closed = 0;
+    function write () {
+        return concat(function () {
+          pending--;
+        }).on('finish', function () {
+            closed++;
+            if (-- pending === 0) done();
+        });
+    }
+    
+    var b = browserify(inputFiles);
+    b.plugin(factor, { outputs: [ write('x'), write('y') ] });
+    b.bundle().on('error', function () {
+        this.emit('end');
+    }).pipe(write('common'));
+    
+    function done () {
+        clearTimeout(timeout);
+        t.equal(closed, 3);
+    }
+    
+    var timeout = setTimeout(done, 1000);
+}
 
 test('function outputs', function (t) {
     var tmpdir = tmp() + '/factor-bundle-' + Math.random();
